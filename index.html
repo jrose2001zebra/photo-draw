@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="theme-color" content="#0f172a" />
-<title>Photo Draw v41.40</title>
+<title>Photo Draw v41.41</title>
 <style>
   :root{
     --bg:#dbeafe;
@@ -1522,7 +1522,7 @@
   <input id="importInput" class="file-input" type="file" accept="image/*" />
 
   <div class="topbar">
-    <div class="brand">Photo Draw v41.40</div>
+    <div class="brand">Photo Draw v41.41</div>
     <div class="top-photo-actions">
       <button id="openBtn" class="btn" type="button"><svg viewBox="0 0 40 40" aria-hidden="true">
   <defs>
@@ -2703,7 +2703,7 @@
     return {
       format: 'PhotoDrawRecovery',
       formatVersion: 1,
-      appVersion: '41.40',
+      appVersion: '41.41',
       savedAt: Date.now(),
       imageName,
       basePhotoBlob,
@@ -3185,7 +3185,7 @@
     line: { color:'#ff2d2d', width:2, opacity:1, linePattern:'solid' },
     erase: { width:20 },
     steps: { color:'#ff2d2d', width:8, opacity:1 },
-    shape: { color:'#000000', width:1, kind:'hexagon', opacity:1 },
+    shape: { color:'#000000', width:1, kind:'hexagon', opacity:1, linePattern:'solid' },
     fill: { color:'#ff2d2d', opacity:1 },
     stamp: { kind:'checkCircle', opacity:1 },
     text: { color:'#ff2d2d', fontFamily:'Arial, Helvetica, sans-serif', fontSize:42, opacity:1 },
@@ -4436,7 +4436,7 @@ function drawStampGraphic(c, kind, cx, cy, size) {
     inkCtx.lineWidth = op.width;
     inkCtx.lineCap = 'round';
     inkCtx.lineJoin = 'round';
-    if(op.type==='draw' || op.type==='line'){
+    if(op.type==='draw' || op.type==='line' || op.type==='shape'){
       inkCtx.setLineDash(linePatternDashArray(op.linePattern||'solid',op.width||2));
     } else {
       inkCtx.setLineDash([]);
@@ -5813,8 +5813,12 @@ function drawStampGraphic(c, kind, cx, cy, size) {
 
   function currentLinePattern() {
     const selected=contextualEditableObject();
-    if(selected && (selected.type==='draw' || selected.type==='line')) return selected.linePattern || 'solid';
-    return tool==='line' ? (toolSettings.line.linePattern||'solid') : (toolSettings.draw.linePattern||'solid');
+    if(selected && (selected.type==='draw' || selected.type==='line' || selected.type==='shape')) {
+      return selected.linePattern || 'solid';
+    }
+    if(tool==='line') return toolSettings.line.linePattern||'solid';
+    if(tool==='shape') return toolSettings.shape.linePattern||'solid';
+    return toolSettings.draw.linePattern||'solid';
   }
 
   function updateLinePatternPreview() {
@@ -5827,16 +5831,19 @@ function drawStampGraphic(c, kind, cx, cy, size) {
   function applyLinePattern(kind) {
     if(!linePatternDashMap.hasOwnProperty(kind)) kind='solid';
     const selected=contextualEditableObject();
-    if(selected && (selected.type==='draw'||selected.type==='line')){
+    if(selected && (selected.type==='draw'||selected.type==='line'||selected.type==='shape')){
       selected.linePattern=kind;
       if(tool!=='select'){
         if(selected.type==='draw') toolSettings.draw.linePattern=kind;
         if(selected.type==='line') toolSettings.line.linePattern=kind;
+        if(selected.type==='shape') toolSettings.shape.linePattern=kind;
       }
       inkRenderKey='';
       render();
     } else if(tool==='line') {
       toolSettings.line.linePattern=kind;
+    } else if(tool==='shape') {
+      toolSettings.shape.linePattern=kind;
     } else {
       toolSettings.draw.linePattern=kind;
     }
@@ -5871,7 +5878,9 @@ function drawStampGraphic(c, kind, cx, cy, size) {
     globalColorBtn.disabled = tool === 'erase' || tool === 'pan' || tool === 'stamp' || tool === 'blur' || (selectedNow && ['stamp','blur'].includes(selectedNow.type)) || (tool === 'select' && !selectedNow && !groupColorable);
     const selectedHasWidthControl = !selectedNow || ['draw','line','shape','step','text'].includes(selectedNow.type);
     globalWidthBtn.disabled = hasGroup || tool === 'pan' || tool === 'fill' || tool === 'stamp' || !selectedHasWidthControl || (tool === 'select' && !selectedNow);
-    const linePatternTarget = selectedNow ? ['draw','line'].includes(selectedNow.type) : ['draw','line'].includes(tool);
+    const linePatternTarget = selectedNow
+      ? ['draw','line','shape'].includes(selectedNow.type)
+      : ['draw','line','shape'].includes(tool);
     linePatternBtn.disabled = hasGroup || !linePatternTarget;
     updateLinePatternPreview();
     globalOpacityBtn.disabled = tool === 'erase' || tool === 'pan' || tool === 'blur' || (selectedNow && selectedNow.type === 'blur') || (tool === 'select' && !selectedNow && !hasGroup);
@@ -7109,6 +7118,7 @@ function drawStampGraphic(c, kind, cx, cy, size) {
       color: toolSettings.shape.color,
       width: Number(toolSettings.shape.width) / scale,
       opacity: toolSettings.shape.opacity,
+      linePattern: toolSettings.shape.linePattern||'solid',
       rotation: 0,
       anchor: {x:p.x, y:p.y},
       start: {x:p.x, y:p.y},
