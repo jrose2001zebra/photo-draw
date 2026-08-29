@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="theme-color" content="#0f172a" />
-<title>Photo Draw v41.41</title>
+<title>Photo Draw v41.42</title>
 <style>
   :root{
     --bg:#dbeafe;
@@ -1522,7 +1522,7 @@
   <input id="importInput" class="file-input" type="file" accept="image/*" />
 
   <div class="topbar">
-    <div class="brand">Photo Draw v41.41</div>
+    <div class="brand">Photo Draw v41.42</div>
     <div class="top-photo-actions">
       <button id="openBtn" class="btn" type="button"><svg viewBox="0 0 40 40" aria-hidden="true">
   <defs>
@@ -2703,7 +2703,7 @@
     return {
       format: 'PhotoDrawRecovery',
       formatVersion: 1,
-      appVersion: '41.41',
+      appVersion: '41.42',
       savedAt: Date.now(),
       imageName,
       basePhotoBlob,
@@ -4437,9 +4437,14 @@ function drawStampGraphic(c, kind, cx, cy, size) {
     inkCtx.lineCap = 'round';
     inkCtx.lineJoin = 'round';
     if(op.type==='draw' || op.type==='line' || op.type==='shape'){
-      inkCtx.setLineDash(linePatternDashArray(op.linePattern||'solid',op.width||2));
+      const pattern=op.linePattern||'solid';
+      inkCtx.setLineDash(linePatternDashArray(pattern,op.width||2));
+      inkCtx.lineCap=(pattern==='dotted' || pattern==='dashdot' || pattern==='longdashdot')
+        ? 'round'
+        : 'butt';
     } else {
       inkCtx.setLineDash([]);
+      inkCtx.lineCap='round';
     }
 
     if (op.type === 'line') {
@@ -4495,6 +4500,7 @@ function drawStampGraphic(c, kind, cx, cy, size) {
 
       // Arrowheads remain solid even when the shaft is patterned.
       inkCtx.setLineDash([]);
+      inkCtx.lineCap='round';
       // Heads are always freshly reconstructed after geometry changes.
       if(startHead) drawArrowHead(inkCtx,op.start,startHead);
       if(endHead) drawArrowHead(inkCtx,op.end,endHead);
@@ -5795,20 +5801,45 @@ function drawStampGraphic(c, kind, cx, cy, size) {
     return toolSettings.draw.opacity;
   }
 
+  // V41.42 — thickness-aware line-pattern geometry.
+  //
+  // Canvas dash lengths are measured along the centerline. If the empty gaps
+  // stay nearly fixed while stroke width grows, thick strokes visually bridge
+  // those gaps and dotted/dashed lines collapse back toward "solid".
+  //
+  // Each pattern is therefore defined in multiples of the CURRENT rendered
+  // stroke width. This keeps both the painted segment and the empty space
+  // proportional at every weight.
   const linePatternDashMap = {
     solid: [],
-    dotted: [1,7],
-    dashed: [9,7],
-    dashdot: [9,5,1,5],
-    longdash: [15,7],
-    longdashdot: [15,5,1,5]
+    dotted:       {paint:[0.20],       gap:[2.10]},
+    dashed:       {paint:[3.40],       gap:[2.25]},
+    dashdot:      {paint:[3.25,0.20],  gap:[1.95,1.95]},
+    longdash:     {paint:[5.60],       gap:[2.45]},
+    longdashdot:  {paint:[5.20,0.20],  gap:[2.05,2.05]}
   };
 
   function linePatternDashArray(kind, width=2) {
-    const base=linePatternDashMap[kind] || [];
-    if(!base.length) return [];
-    const factor=Math.max(.65, Math.min(2.2, Number(width||2)/2));
-    return base.map(v=>v*factor);
+    const spec=linePatternDashMap[kind];
+    if(!spec || Array.isArray(spec)) return [];
+
+    // Width may be in image-space or rendered-space depending on caller, but
+    // the ratio logic is the same. Clamp only the absolute minimum so very
+    // thin lines remain readable without destroying proportional spacing.
+    const w=Math.max(1,Number(width)||1);
+    const out=[];
+
+    const count=Math.max(spec.paint.length,spec.gap.length);
+    for(let i=0;i<count;i++){
+      const paint=spec.paint[i] ?? spec.paint[spec.paint.length-1] ?? 1;
+      const gap=spec.gap[i] ?? spec.gap[spec.gap.length-1] ?? 1;
+
+      // For round-capped dots, Canvas renders a zero-ish dash as a circular dot.
+      // Keep a tiny positive painted length for browser consistency.
+      out.push(Math.max(.15*w,paint*w));
+      out.push(Math.max(1.35*w,gap*w));
+    }
+    return out;
   }
 
   function currentLinePattern() {
@@ -5823,7 +5854,6 @@ function drawStampGraphic(c, kind, cx, cy, size) {
 
   function updateLinePatternPreview() {
     const kind=currentLinePattern();
-    const dash=linePatternDashMap[kind] || [];
     linePatternChoices.forEach(btn=>btn.classList.toggle('active',btn.dataset.linePattern===kind));
     linePatternBtn.title=`Line style: ${kind.replace('dashdot','dash-dot').replace('longdashdot','long dash-dot').replace('longdash','long dash')}`;
   }
@@ -6854,9 +6884,12 @@ function drawStampGraphic(c, kind, cx, cy, size) {
     ctx.globalAlpha = Number.isFinite(stroke.opacity) ? stroke.opacity : 1;
     ctx.strokeStyle = stroke.color || '#ff2d2d';
     ctx.lineWidth = Math.max(0.5, stroke.width * scale);
-    ctx.lineCap = 'round';
+    const livePattern=stroke.linePattern||'solid';
+    ctx.lineCap=(livePattern==='dotted' || livePattern==='dashdot' || livePattern==='longdashdot')
+      ? 'round'
+      : 'butt';
     ctx.lineJoin = 'round';
-    const liveDash=linePatternDashArray(stroke.linePattern||'solid',Math.max(.5,stroke.width*scale));
+    const liveDash=linePatternDashArray(livePattern,Math.max(1,stroke.width*scale));
     ctx.setLineDash(liveDash);
     ctx.beginPath();
     ctx.moveTo(offsetX + a.x * scale, offsetY + a.y * scale);
